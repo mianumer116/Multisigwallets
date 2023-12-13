@@ -1,116 +1,167 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
-contract multisigwallet{
- address[]private  owners;
-    
-    constructor(address [] memory _owners){
-        owners=_owners;
-        
+
+contract MultiSigWallet {
+    address[] private owners;
+
+    constructor(address[] memory _owners) {
+        owners = _owners;
     }
-    //Struct for contract is here
-    struct Transfer{
+
+    struct Transfer {
         address from;
         address to;
         uint amount;
         uint approvereq;
         uint id;
-
         bool isexecuted;
-
-
     }
-    struct ADDOWNER{
+
+    struct AddOwner {
         uint id;
         address from;
         address to;
         uint approvedreq;
         bool isexecuted;
     }
-    //ALL ARRAY FOR STORE 
-    Transfer[]public Transfers;
-    ADDOWNER[]public ADDOWNERS;
-    //ALL MAPPING ARE STORE HERE
-    mapping(address=>uint256)private balance;
-    mapping(address=>mapping(uint=>bool))alredyvote;
-    mapping(address=>mapping(uint=>bool))alredyvoteforowner;
-    //ALL EVENTS ARE HERE
-    event Deposits(uint,uint);
-    event RECEIVE(address,uint,uint);
-    event ADDnewOWNER(uint,address,address,uint);
-    event OWNERADD(address,uint,bool);
 
+    struct DeleteOwner {
+        uint id;
+        address from;
+        address to;
+        uint approvereq;
+        bool isexecuted;
+    }
 
+    Transfer[] public transfers;
+    AddOwner[] public addOwners;
+    DeleteOwner[] public deleteOwners;
 
-//ALL MODIFIER ARE HERE
+    mapping(address => uint256) private balance;
+    mapping(address => mapping(uint => bool)) private alredyvote;
+    mapping(address => mapping(uint => bool)) private alredyvoteforowner;
+    mapping(address => mapping(uint => bool)) private alredyvoteforremoveowner;
 
-modifier onlyowners{
-    bool isowner;
-    for(uint i=0;i<owners.length;i++){
-        if(msg.sender==owners[i]){
-            isowner=true;
-            break;
+    event Deposits(uint, uint);
+    event RECEIVE(address, uint, uint);
+    event ADDnewOWNER(uint, address, address, uint);
+    event OWNERADD(address, uint, bool);
+    event RemoveOwners(address, address, uint, uint, bool);
+
+    modifier onlyOwners {
+        bool isOwner;
+        for (uint i = 0; i < owners.length; i++) {
+            if (msg.sender == owners[i]) {
+                isOwner = true;
+                break;
+            }
         }
-
+        require(isOwner, "Only owners can perform this action");
+        _;
     }
-    require(isowner,"onlyownerscan withdraw");
-    _;
-}
-modifier checkowner(address to){
-    bool isowner=false;
-    for(uint i=0;i<owners.length;i++){
-        if(to==owners[i]){
-            isowner=true;
-            break;
+
+    modifier checkOwner(address to) {
+        bool isOwner = false;
+        for (uint i = 0; i < owners.length; i++) {
+            if (to == owners[i]) {
+                isOwner = true;
+                break;
+            }
+        }
+        require(!isOwner, "This address is already an owner");
+        _;
+    }
+
+    modifier checkToRemove(address to) {
+        bool isPart;
+        for (uint i = 0; i < owners.length; i++) {
+            if (msg.sender == owners[i]) {
+                isPart = true;
+                break;
+            }
+        }
+        require(isPart, "This address is not an owner");
+        _;
+    }
+
+    function getBalance() public view returns (uint) {
+        return balance[msg.sender];
+    }
+
+    function deposit() public payable {
+        require(msg.value > 0, "Balance should be greater than zero");
+        balance[msg.sender] += msg.value;
+        emit Deposits(msg.value, block.timestamp);
+    }
+
+    receive() external payable {
+        require(msg.value > 0, "Balance should be greater than zero");
+        balance[msg.sender] += msg.value;
+        emit RECEIVE(msg.sender, msg.value, block.timestamp);
+    }
+
+    function transfer(address to, uint amount) public onlyOwners {
+        require(balance[msg.sender] >= amount, "Balance is not enough");
+        transfers.push(Transfer(msg.sender, to, amount, 0, transfers.length, false));
+    }
+
+    function approveTransfer(uint id) public onlyOwners {
+        require(!alredyvote[msg.sender][id], "You already approved this request");
+        require(id < transfers.length && !transfers[id].isexecuted, "Invalid ID or already approved");
+        
+        alredyvote[msg.sender][id] = true;
+        transfers[id].approvereq++;
+
+        if (transfers[id].approvereq >= owners.length) {
+            transfers[id].isexecuted = true;
+            balance[transfers[id].from] -= transfers[id].amount;
+            balance[transfers[id].to] += transfers[id].amount;
         }
     }
-    require(!isowner,"this address is already owner");
-    _;
-}
-//some baisc functions
-function Balance()public  view returns(uint){
-    return balance[msg.sender];
-}
-function Deposit()public  payable{
-    require(msg.value>0,"balance shoud be bigger then zero");
-    balance[msg.sender]+=msg.value;
-    emit Deposits(msg.value,block.timestamp);
-}
-receive()external payable{
-    require(msg.value>0,"balance should be bigger then zero");
-    balance[msg.sender]+=msg.value;
-    emit RECEIVE(msg.sender,msg.value,block.timestamp);
-}
-function TRansfer(address to,uint amount)public onlyowners{
-    require(balance[msg.sender]>=amount,"balance is not enough");
-    Transfers.push(Transfer(msg.sender,to,amount,0,Transfers.length,false));
-}
-function ApproveTransfer(uint id)public onlyowners{
-    require(alredyvote[msg.sender][id]==false,"you alredy approve this request");
-    //require(Transfers[id].isexecuted==false,"this request is alredy executed");
-    require(id==Transfers[id].id&&Transfers[id].isexecuted==false,"id not found or alrdy approved");
-    alredyvote[msg.sender][id]=true;
-    Transfers[id].approvereq++;
-    if(Transfers[id].approvereq>=owners.length){
-        Transfers[id].isexecuted=true;
-        balance[Transfers[id].from]-=Transfers[id].amount;
-        balance[Transfers[id].to]+=Transfers[id].amount;
-    }
-}
- function ADOWNER(address to)public checkowner(to) onlyowners 
- {
-    ADDOWNERS.push(ADDOWNER(ADDOWNERS.length,msg.sender,to,0,false));
-    emit ADDnewOWNER(owners.length,msg.sender ,to ,block.timestamp );
- }
-function APPROVEOWNER(uint id)public onlyowners{
-    require(ADDOWNERS[id].isexecuted==false,"this is alredy executed");
-    require(alredyvoteforowner[msg.sender][id]==false,"you alredy vote");
-    alredyvoteforowner[msg.sender][id]=true;
-    ADDOWNERS[id].approvedreq++;
-    if(ADDOWNERS[id].approvedreq>=owners.length){
-      owners.push(  ADDOWNERS[id].to);
-      ADDOWNERS[id].isexecuted=true;
-    }
-    emit OWNERADD(ADDOWNERS[id].to,block.timestamp,ADDOWNERS[id].isexecuted );
-}
 
+    function addOwner(address to) public checkOwner(to) onlyOwners {
+        addOwners.push(AddOwner(addOwners.length, msg.sender, to, 0, false));
+        emit ADDnewOWNER(owners.length, msg.sender, to, block.timestamp);
+    }
+
+    function approveOwner(uint id) public onlyOwners {
+        require(!addOwners[id].isexecuted, "This is already executed");
+        require(!alredyvoteforowner[msg.sender][id], "You already voted");
+
+        alredyvoteforowner[msg.sender][id] = true;
+        addOwners[id].approvedreq++;
+
+        if (addOwners[id].approvedreq >= owners.length) {
+            owners.push(addOwners[id].to);
+            addOwners[id].isexecuted = true;
+            emit OWNERADD(addOwners[id].to, block.timestamp, addOwners[id].isexecuted);
+        }
+    }
+
+    function removeOwner(address to) public onlyOwners checkToRemove(to) {
+        deleteOwners.push(DeleteOwner(deleteOwners.length, msg.sender, to, 0, false));
+        emit RemoveOwners(msg.sender, to, owners.length, 0, false);
+    }
+
+    function voteToRemoveOwner(uint id) public onlyOwners {
+        require(id < deleteOwners.length && !deleteOwners[id].isexecuted, "Invalid ID or already executed");
+        require(!alredyvoteforremoveowner[msg.sender][id], "You already voted to remove this owner");
+
+        alredyvoteforremoveowner[msg.sender][id] = true;
+        deleteOwners[id].approvereq++;
+
+        if (deleteOwners[id].approvereq >= owners.length) {
+            deleteOwners[id].isexecuted = true;
+
+            for (uint i = 0; i < owners.length; i++) {
+                if (owners[i] == deleteOwners[id].to) {
+                    for (uint j = i; j < owners.length - 1; j++) {
+                        owners[j] = owners[j + 1];
+                    }
+                    owners.pop();
+                    break;
+                }
+            }
+        }
+    }
 }
