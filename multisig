@@ -14,7 +14,6 @@ contract MultiSigWallet {
         uint amount;
         uint approvereq;
         uint id;
-        bool isexecuted;
     }
 
     struct AddOwner {
